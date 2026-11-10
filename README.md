@@ -16,7 +16,7 @@ Open **PowerShell** (search for it in the Start menu), paste this and press Ente
 irm https://raw.githubusercontent.com/apinanaivot/LegionNotch/main/install.ps1 | iex
 ```
 
-Windows 10 or 11. No admin rights or Python needed. Run it again to update.
+Windows 10 or 11. No admin rights needed.
 
 ## Features
 
