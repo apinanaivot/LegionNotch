@@ -3,7 +3,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import QRectF, Qt
 
 from .config import ACCENT, DIM, THEMES, TXT
-from .winapi import startup_enabled
+from .winapi import is_installed, startup_enabled, uninstall_self
 
 FONT = "Segoe UI Variable Text"
 
@@ -110,10 +110,11 @@ class ThemePicker(QtWidgets.QWidget):
 
 class SettingsPopup(QtWidgets.QFrame):
     ROWS = (("mode_color", "Colour the power mode", "Off uses the theme colour"),
+            ("auto_hide", "Auto-hide", "Shows when the mouse is at the top centre"),
             ("startup", "Start with Windows", ""),
-            ("pinned", "Keep expanded", "Stay open when not hovered"),
-            ("show_temps", "Show temperatures", "CPU and GPU in the bar"),
-            ("gpu_power", "Show GPU power draw", "Watts, in the detail line"),
+            ("pinned", "Keep expanded", ""),
+            ("show_temps", "Show temperatures", ""),
+            ("gpu_power", "Show GPU power draw", ""),
             ("task_manager_click", "Open Task Manager on click", ""))
 
     def __init__(self, bar):
@@ -136,7 +137,29 @@ class SettingsPopup(QtWidgets.QFrame):
             row.toggled.connect(lambda on, k=key: bar.apply_setting(k, on))
             lay.addWidget(row)
             self.rows[key] = row
+        if is_installed():
+            line = QtWidgets.QFrame()
+            line.setFixedHeight(1)
+            line.setStyleSheet("background:#2a2c31")
+            lay.addWidget(line)
+            btn = QtWidgets.QPushButton("Uninstall LegionNotch…")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(f"QPushButton{{color:{DIM.name()};font:10pt '{FONT}';border:none;text-align:left;padding:0}}"
+                              f"QPushButton:hover{{color:#e4262f}}")
+            btn.clicked.connect(self._uninstall)
+            lay.addWidget(btn)
         self.adjustSize()
+
+    def _uninstall(self):
+        self.hide()
+        box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Warning, "Uninstall LegionNotch",
+                                    "Remove LegionNotch, its settings, Start menu shortcut and startup entry?")
+        box.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel)
+        box.setDefaultButton(QtWidgets.QMessageBox.Cancel)
+        box.button(QtWidgets.QMessageBox.Yes).setText("Uninstall")
+        if box.exec() == QtWidgets.QMessageBox.Yes:
+            uninstall_self()
+            QtWidgets.QApplication.quit()
 
     def popup_at(self, right_bottom):
         cur = dict(self.bar.cfg, startup=startup_enabled(), pinned=self.bar.pinned)

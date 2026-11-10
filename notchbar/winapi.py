@@ -191,6 +191,42 @@ def set_startup(on):
                 pass
 
 
+def is_installed():
+    """True when running as the packaged exe from the installer's folder."""
+    if not getattr(sys, "frozen", False):
+        return False
+    want = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "LegionNotch")
+    return os.path.normcase(os.path.dirname(sys.executable)) == os.path.normcase(want)
+
+
+def uninstall_self():
+    """Remove the startup entry, settings and shortcut now, and the install folder once this process exits."""
+    import shutil
+    import subprocess
+    try:
+        set_startup(False)
+    except OSError:
+        pass
+    shutil.rmtree(os.path.join(os.environ.get("APPDATA", ""), APP_NAME), ignore_errors=True)
+    lnk = os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Start Menu\Programs\LegionNotch.lnk")
+    try:
+        os.remove(lnk)
+    except OSError:
+        pass
+    folder = os.path.dirname(sys.executable).replace("'", "''")
+    script = (f"Wait-Process -Id {os.getpid()} -Timeout 15 -ErrorAction SilentlyContinue; "
+              f"for ($i = 0; (Test-Path '{folder}') -and $i -lt 20; $i++) "
+              f"{{ Remove-Item '{folder}' -Recurse -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500 }}")
+    args = ["powershell", "-NoProfile", "-NonInteractive", "-Command", script]
+    base = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    io = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+              cwd=os.environ.get("TEMP"), close_fds=True)
+    try:   # outlive this process even if it was started inside a job object
+        subprocess.Popen(args, creationflags=base | subprocess.CREATE_BREAKAWAY_FROM_JOB, **io)
+    except OSError:
+        subprocess.Popen(args, creationflags=base, **io)
+
+
 def open_task_manager():
     try:
         shell32.ShellExecuteW(None, "open", "taskmgr.exe", None, None, 1)

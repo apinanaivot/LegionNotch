@@ -16,6 +16,8 @@
     Write-Host "Downloading LegionNotch..."
     Invoke-WebRequest $url -OutFile $zip -UseBasicParsing
 
+    $fresh = -not (Test-Path $dir)
+
     # updating: stop the running copy and wait until Windows releases its files
     Get-Process LegionNotch -ErrorAction SilentlyContinue | Stop-Process -Force
     Wait-Process LegionNotch -Timeout 10 -ErrorAction SilentlyContinue
@@ -35,6 +37,11 @@
     $sc.Description = "System-stats bar shaped like the Legion notch"
     $sc.Save()
 
+    # start with Windows: on for a fresh install; an update keeps whatever was chosen in settings
+    $run = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+    $had = $null -ne (Get-ItemProperty $run -Name NotchBar -ErrorAction SilentlyContinue)
+    if ($fresh -or $had) { Set-ItemProperty $run -Name NotchBar -Value "`"$exe`"" }
+
     Start-Process $exe
-    Write-Host "LegionNotch is running. Hover the top of the screen; the gear opens settings (including Start with Windows)."
+    Write-Host "LegionNotch is installed and running."
 }

@@ -56,7 +56,7 @@ def apply_theme(name):
 
 # ------------------------------------------------------------------ settings (saved as JSON)
 SETTINGS_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME, "settings.json")
-DEFAULTS = {"theme": "Graphite", "mode_color": True, "pinned": False, "show_temps": True, "gpu_power": False, "task_manager_click": True}
+DEFAULTS = {"theme": "Graphite", "mode_color": True, "auto_hide": False, "pinned": False, "show_temps": True, "gpu_power": False, "task_manager_click": True}
 
 
 def load_settings():

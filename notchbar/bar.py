@@ -91,6 +91,14 @@ class NotchBar(QtWidgets.QWidget):
         if self.pinned:
             self._set_h(EXPANDED_H)
 
+        # auto-hide: hidden (and not sampling) until the mouse touches the top edge above the bar
+        self.reveal_timer = QtCore.QTimer(self, interval=120)
+        self.reveal_timer.timeout.connect(self._check_reveal)
+        self.hide_timer = QtCore.QTimer(self, singleShot=True, interval=900)
+        self.hide_timer.timeout.connect(self._auto_hide)
+        if self.cfg["auto_hide"] and not self.pinned:
+            QtCore.QTimer.singleShot(0, self._auto_hide)
+
     # -- Windows notifications: lock/unlock and display on/off
     def showEvent(self, e):
         if not self._notifications_registered:
@@ -106,7 +114,7 @@ class NotchBar(QtWidgets.QWidget):
     def nativeEvent(self, event_type, message):
         try:
             msg = wintypes.MSG.from_address(int(message))
-            if msg.message == WM_WINDOWPOSCHANGING and not self.desktop_front:
+            if msg.message == WM_WINDOWPOSCHANGING and not self._front():
                 # keep the bar at the bottom of the z-order (on the desktop) whatever happens
                 wp = WINDOWPOS.from_address(msg.lParam)
                 if not wp.flags & SWP_NOZORDER:
@@ -142,9 +150,13 @@ class NotchBar(QtWidgets.QWidget):
             if self.isVisible():
                 self._apply_z()
 
+    def _front(self):
+        """On top of other windows while the desktop is focused (e.g. after Win+D),
+        or always in auto-hide mode, where it's only visible when asked for."""
+        return self.desktop_front or self.cfg["auto_hide"]
+
     def _apply_z(self):
-        """On top of other windows only while the desktop is focused (e.g. after Win+D)."""
-        user32.SetWindowPos(int(self.winId()), HWND_TOP if self.desktop_front else HWND_BOTTOM,
+        user32.SetWindowPos(int(self.winId()), HWND_TOP if self._front() else HWND_BOTTOM,
                             0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
 
     def _set_blocked(self, reason, on):
@@ -163,6 +175,23 @@ class NotchBar(QtWidgets.QWidget):
             self._poll_mode()
             self.show()
             self._apply_z()
+            if self.cfg["auto_hide"] and not self.underMouse():
+                self.hide_timer.start()
+
+    def _check_reveal(self):
+        pos = QtGui.QCursor.pos()
+        g = QtGui.QGuiApplication.primaryScreen().geometry()
+        if pos.y() <= g.top() + 1 and self.x() + LIP <= pos.x() <= self.x() + self.width() - LIP:
+            self.reveal_timer.stop()
+            self._set_blocked("autohide", False)
+
+    def _auto_hide(self):
+        if (self.cfg["auto_hide"] and not self.pinned and not self.popup_open
+                and not self.underMouse()):
+            self.anim.stop()
+            self._set_h(COLLAPSED_H)
+            self._set_blocked("autohide", True)
+            self.reveal_timer.start()
 
     def _update_tip(self):
         name = POWER_MODES.get(self.mode, ("?",))[0]
@@ -294,15 +323,20 @@ class NotchBar(QtWidgets.QWidget):
 
     def enterEvent(self, e):
         self.collapse_timer.stop()
+        self.hide_timer.stop()
         self._animate_to(EXPANDED_H)
 
     def leaveEvent(self, e):
         if not self.pinned and not self.popup_open:
             self.collapse_timer.start()
+            if self.cfg["auto_hide"]:
+                self.hide_timer.start()
 
     def after_popup(self):
         if not self.pinned and not self.underMouse():
             self.collapse_timer.start()
+            if self.cfg["auto_hide"]:
+                self.hide_timer.start()
 
     # -- clickable regions (rebuilt every paint)
     def _hit(self, pos):
@@ -354,6 +388,14 @@ class NotchBar(QtWidgets.QWidget):
             self._animate_to(EXPANDED_H)   # stays open while the popup is; collapses after it closes
         self.cfg[key] = on
         save_settings(self.cfg)
+        if key == "auto_hide":
+            if on:
+                self._apply_z()
+                self.hide_timer.start()     # once the settings close and the mouse is elsewhere
+            else:
+                self.reveal_timer.stop()
+                self._set_blocked("autohide", False)
+                self._apply_z()
         if key == "theme":
             apply_theme(on)
             if self.popup:
