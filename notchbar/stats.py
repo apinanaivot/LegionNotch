@@ -1,4 +1,6 @@
 """Background thread that samples CPU / RAM / GPU / network / disk once a second."""
+import ctypes
+import struct
 import threading
 import time
 from collections import deque
@@ -8,6 +10,50 @@ from PySide6 import QtCore
 
 from .config import GPU_POLL_AC, GPU_POLL_BATTERY, HISTORY
 from .gpu import Gpu, query_lhm_cpu_temp
+
+_ntdll = ctypes.WinDLL("ntdll")
+_ntdll.NtQuerySystemInformation.argtypes = [ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong,
+                                            ctypes.POINTER(ctypes.c_ulong)]
+_buf = [ctypes.create_string_buffer(1 << 20)]
+
+
+NOT_APPS = {"Memory Compression", "Registry", "Secure System", "vmmem"}
+
+
+def process_snapshot():
+    """Every process's name, total CPU time and private working set from one
+    NtQuerySystemInformation call (a few ms, vs. ~0.5 s for opening each process).
+    Returns {(pid, create_time): (name, cpu_100ns, private_bytes)} or None."""
+    need = ctypes.c_ulong()
+    for _ in range(4):
+        buf = _buf[0]
+        st = _ntdll.NtQuerySystemInformation(5, buf, len(buf), ctypes.byref(need)) & 0xFFFFFFFF
+        if st == 0:
+            break
+        if st != 0xC0000004:            # anything but "buffer too small"
+            return None
+        _buf[0] = ctypes.create_string_buffer(max(need.value, len(buf)) + (256 << 10))
+    else:
+        return None
+    raw, base, off, out = buf.raw, ctypes.addressof(buf), 0, {}
+    while True:   # SYSTEM_PROCESS_INFORMATION, 64-bit layout
+        nxt, = struct.unpack_from("<I", raw, off)
+        private_ws, = struct.unpack_from("<q", raw, off + 8)
+        create, user, kernel = struct.unpack_from("<qqq", raw, off + 32)
+        name_len, = struct.unpack_from("<H", raw, off + 56)
+        name_ptr, = struct.unpack_from("<Q", raw, off + 64)
+        pid, = struct.unpack_from("<Q", raw, off + 80)
+        if pid and name_ptr:
+            start = name_ptr - base
+            name = raw[start:start + name_len].decode("utf-16-le", "replace")
+            if name.lower().endswith(".exe"):
+                name = name[:-4]
+            out[(pid, create)] = (name, user + kernel, private_ws)
+        elif pid:   # pid 4 "System" has no image name
+            out[(pid, create)] = ("System", user + kernel, private_ws)
+        if not nxt:
+            return out
+        off += nxt
 
 
 class Stats(QtCore.QObject):
@@ -20,30 +66,33 @@ class Stats(QtCore.QObject):
         self.active.set()
         self.want_procs = threading.Event()   # set by the bar while expanded
         self._procs_t = 0.0
+        self._prev = None
         threading.Thread(target=self._run, daemon=True, name="stats").start()
 
     def _top_procs(self, now):
         """Top CPU / memory apps (grouped by name). Only runs while the bar is expanded;
-        returns None while (re)priming the per-process CPU counters."""
+        returns None while priming the CPU-time baseline, "keep" between samples."""
         if not self.want_procs.is_set():
-            self._procs_t = 0.0
+            self._procs_t, self._prev = 0.0, None
             return None
         if now < self._procs_t:
             return "keep"
-        primed = self._procs_t > 0
         self._procs_t = now + 2.5
-        ncpu = psutil.cpu_count() or 1
-        cpu, mem = {}, {}
-        for p in psutil.process_iter(["name", "cpu_percent", "memory_info"]):
-            i = p.info
-            name = (i.get("name") or "?")
-            if p.pid == 0 or not i.get("memory_info"):
-                continue
-            name = name[:-4] if name.lower().endswith(".exe") else name
-            cpu[name] = cpu.get(name, 0.0) + (i.get("cpu_percent") or 0.0) / ncpu
-            mem[name] = mem.get(name, 0) + i["memory_info"].rss
-        if not primed:
+        snap = process_snapshot()
+        if snap is None:
             return None
+        prev, self._prev = self._prev, (now, snap)
+        if prev is None:
+            return None
+        dt = max(now - prev[0], 0.001) * 1e7 * (psutil.cpu_count() or 1)   # 100 ns units, all cores
+        cpu, mem = {}, {}
+        for key, (name, t, ws) in snap.items():
+            if name in NOT_APPS:
+                continue
+            old = prev[1].get(key)
+            if old is not None:
+                cpu[name] = cpu.get(name, 0.0) + max(0, t - old[1]) / dt * 100
+            mem[name] = mem.get(name, 0) + ws
         top = lambda d: sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:3]
         return {"cpu": top(cpu), "mem": top(mem)}
 

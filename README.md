@@ -68,3 +68,7 @@ pythonw notchbar.pyw
 Build the release zip with `pip install pyinstaller` and `.\build.ps1`.
 
 </details>
+
+## License
+
+[MIT](LICENSE)

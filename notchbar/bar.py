@@ -192,8 +192,9 @@ class NotchBar(QtWidgets.QWidget):
 
     def _slide_to(self, target):
         self.slide_anim.stop()
+        # opening decelerates; closing eases both ends (an ease-in ends in big per-frame jumps)
         self.slide_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic if target > self.slide
-                                       else QtCore.QEasingCurve.InCubic)
+                                       else QtCore.QEasingCurve.InOutCubic)
         self.slide_anim.setStartValue(self.slide)
         self.slide_anim.setEndValue(float(target))
         self.slide_anim.start()
