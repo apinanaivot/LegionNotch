@@ -94,7 +94,12 @@ class NotchBar(QtWidgets.QWidget):
         # auto-hide: hidden (and not sampling) until the mouse touches the top edge above the bar
         self.reveal_timer = QtCore.QTimer(self, interval=120)
         self.reveal_timer.timeout.connect(self._check_reveal)
-        self.hide_timer = QtCore.QTimer(self, singleShot=True, interval=900)
+        self.slide = 1.0                     # 0 = tucked above the screen edge, 1 = fully shown
+        self.slide_anim = QtCore.QVariantAnimation(self)
+        self.slide_anim.setDuration(220)
+        self.slide_anim.valueChanged.connect(self._set_slide)
+        self.slide_anim.finished.connect(self._slide_done)
+        self.hide_timer = QtCore.QTimer(self, singleShot=True, interval=700)
         self.hide_timer.timeout.connect(self._auto_hide)
         if self.cfg["auto_hide"] and not self.pinned:
             QtCore.QTimer.singleShot(0, self._auto_hide)
@@ -175,23 +180,51 @@ class NotchBar(QtWidgets.QWidget):
             self._poll_mode()
             self.show()
             self._apply_z()
-            if self.cfg["auto_hide"] and not self.underMouse():
+            if self.cfg["auto_hide"] and not self._mouse_over():
                 self.hide_timer.start()
+
+    def _mouse_over(self):
+        return self.geometry().contains(QtGui.QCursor.pos())
+
+    def _set_slide(self, v):
+        self.slide = float(v)
+        self.update()
+
+    def _slide_to(self, target):
+        self.slide_anim.stop()
+        self.slide_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic if target > self.slide
+                                       else QtCore.QEasingCurve.InCubic)
+        self.slide_anim.setStartValue(self.slide)
+        self.slide_anim.setEndValue(float(target))
+        self.slide_anim.start()
+
+    def _slide_done(self):
+        if self.slide > 0.01:
+            return
+        if self._should_hide():              # fully tucked away: stop everything until revealed again
+            self.anim.stop()
+            self._set_h(COLLAPSED_H)
+            self._set_blocked("autohide", True)
+            self.reveal_timer.start()
+        else:                                # hovered again during the slide-out
+            self._slide_to(1.0)
 
     def _check_reveal(self):
         pos = QtGui.QCursor.pos()
         g = QtGui.QGuiApplication.primaryScreen().geometry()
         if pos.y() <= g.top() + 1 and self.x() + LIP <= pos.x() <= self.x() + self.width() - LIP:
             self.reveal_timer.stop()
+            self.slide = 0.0
             self._set_blocked("autohide", False)
+            self._slide_to(1.0)
+
+    def _should_hide(self):
+        return (self.cfg["auto_hide"] and not self.pinned and not self.popup_open
+                and not self._mouse_over())
 
     def _auto_hide(self):
-        if (self.cfg["auto_hide"] and not self.pinned and not self.popup_open
-                and not self.underMouse()):
-            self.anim.stop()
-            self._set_h(COLLAPSED_H)
-            self._set_blocked("autohide", True)
-            self.reveal_timer.start()
+        if self._should_hide():
+            self._slide_to(0.0)
 
     def _update_tip(self):
         name = POWER_MODES.get(self.mode, ("?",))[0]
@@ -324,19 +357,24 @@ class NotchBar(QtWidgets.QWidget):
     def enterEvent(self, e):
         self.collapse_timer.stop()
         self.hide_timer.stop()
-        self._animate_to(EXPANDED_H)
+        if self.slide < 1.0 and self.slide_anim.endValue() == 0.0:
+            self._slide_to(1.0)              # hovered during the slide-out: reverse it
+        if not self.cfg["auto_hide"]:
+            self._animate_to(EXPANDED_H)
 
     def leaveEvent(self, e):
         if not self.pinned and not self.popup_open:
-            self.collapse_timer.start()
             if self.cfg["auto_hide"]:
-                self.hide_timer.start()
+                self.hide_timer.start()      # slide out at the current size, then reset to the small bar
+            else:
+                self.collapse_timer.start()
 
     def after_popup(self):
-        if not self.pinned and not self.underMouse():
-            self.collapse_timer.start()
+        if not self.pinned and not self._mouse_over():
             if self.cfg["auto_hide"]:
                 self.hide_timer.start()
+            else:
+                self.collapse_timer.start()
 
     # -- clickable regions (rebuilt every paint)
     def _hit(self, pos):
@@ -345,6 +383,8 @@ class NotchBar(QtWidgets.QWidget):
                 if action == "taskmgr" and not self.cfg["task_manager_click"]:
                     continue
                 return action
+        if self.cfg["auto_hide"] and self.h < COLLAPSED_H + 1 and pos.y() <= COLLAPSED_H:
+            return "expand"
         return None
 
     def mouseMoveEvent(self, e):
@@ -361,6 +401,8 @@ class NotchBar(QtWidgets.QWidget):
                 self.mode = nxt          # optimistic; _poll_mode confirms within a second
                 self._update_tip()
                 self.update()
+        elif action == "expand":
+            self._animate_to(EXPANDED_H)
         elif action == "taskmgr":
             open_task_manager()
         elif action == "gear":
@@ -394,6 +436,8 @@ class NotchBar(QtWidgets.QWidget):
                 self.hide_timer.start()     # once the settings close and the mouse is elsewhere
             else:
                 self.reveal_timer.stop()
+                self.slide_anim.stop()
+                self._set_slide(1.0)
                 self._set_blocked("autohide", False)
                 self._apply_z()
         if key == "theme":
@@ -442,6 +486,8 @@ class NotchBar(QtWidgets.QWidget):
     def paintEvent(self, _):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.Antialiasing)
+        if self.slide < 1.0:
+            p.translate(0, -(1.0 - self.slide) * self.height())
         shape = self._shape(self.h)
         p.fillPath(shape, BG)
         p.setPen(QtGui.QPen(EDGE, 1))
@@ -473,7 +519,6 @@ class NotchBar(QtWidgets.QWidget):
         slots = [QRectF(x0, 0, sw, COLLAPSED_H), QRectF(x0 + sw + gap, 0, sw, COLLAPSED_H),
                  QRectF(rx, 0, sw, COLLAPSED_H), QRectF(rx + sw + gap, 0, sw, COLLAPSED_H)]
         self._paint_mode(p, QRectF(cx - mid / 2, 0, mid, COLLAPSED_H))
-        self.hits += [(r, "taskmgr") for r in slots]
         temps = self.cfg["show_temps"]
         self._slot(p, slots[0], "CPU", "cpu", "cpu_t" if temps else "", self.colors.get("cpu_t", DIM), "cpu", C_CPU, now)
         self._slot(p, slots[1], "GPU", "gpu", "gpu_t" if temps else "", self.colors.get("gpu_t", DIM), "gpu", C_GPU, now)
