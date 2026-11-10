@@ -7,22 +7,34 @@ A small system-stats bar for Windows that hangs from the top edge of the screen,
 - **Click** a stat to open Task Manager, or the power-mode pill to cycle Quiet → Balanced → Performance.
 - **Settings** (gear icon, or right-click): five colour themes, start with Windows, keep expanded, temperatures, GPU power draw.
 
-## Requirements
+## Install
 
-- Windows 10 or 11
-- Python 3.10+
+Paste this into PowerShell (Windows 10 or 11, no admin rights or Python needed):
 
+```powershell
+irm https://raw.githubusercontent.com/apinanaivot/LegionNotch/main/install.ps1 | iex
 ```
-pip install -r requirements.txt
-```
 
-## Run
+It downloads the latest release to `%LOCALAPPDATA%\Programs\LegionNotch`, adds a Start menu shortcut and launches it. Run it again to update. To start it with Windows, turn on *Start with Windows* under the gear icon.
 
-```
-pythonw notchbar.pyw
+To uninstall:
+
+```powershell
+irm https://raw.githubusercontent.com/apinanaivot/LegionNotch/main/uninstall.ps1 | iex
 ```
 
 Settings are stored in `%APPDATA%\NotchBar\settings.json`.
+
+## Run from source
+
+Needs Python 3.10+.
+
+```
+pip install -r requirements.txt
+pythonw notchbar.pyw
+```
+
+To build the standalone release zip: `pip install pyinstaller`, then run `.\build.ps1`. The output is `dist\LegionNotch.zip`.
 
 ## Hardware notes
 

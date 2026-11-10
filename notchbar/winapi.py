@@ -178,8 +178,12 @@ def startup_enabled():
 def set_startup(on):
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
         if on:
-            pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-            winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, f'"{pyw}" "{os.path.abspath(sys.argv[0])}"')
+            if getattr(sys, "frozen", False):      # packaged LegionNotch.exe
+                cmd = f'"{sys.executable}"'
+            else:
+                pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                cmd = f'"{pyw}" "{os.path.abspath(sys.argv[0])}"'
+            winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, cmd)
         else:
             try:
                 winreg.DeleteValue(k, APP_NAME)
