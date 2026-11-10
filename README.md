@@ -2,7 +2,7 @@
 
 # LegionNotch
 
-A system monitor in a notch at the top of the screen.
+A system monitor for Lenovo Legion laptops, shaped to match the webcam notch at the top of the screen.
 
 <img src="docs/collapsed.png" width="700" alt="LegionNotch collapsed">
 
@@ -22,10 +22,11 @@ Windows 10 or 11. No admin rights or Python needed. Run it again to update.
 
 <img src="docs/expanded.png" width="700" alt="LegionNotch expanded">
 
+- Legion power mode (Quiet, Balanced, Performance) in the middle, updated live with Fn+Q
+- Click the power mode to switch it
 - CPU, GPU, RAM and network at a glance
 - Hover for live graphs and the busiest apps
 - Click a graph or app list to open Task Manager
-- Click the middle pill to switch power mode
 - Pauses under fullscreen apps, on the lock screen and with the display off
 
 <img src="docs/settings.png" width="300" alt="Settings" align="right">
@@ -44,6 +45,7 @@ Open them with the gear in the expanded view.
 
 ## Notes
 
+- Made for the Legion 5. Other Windows laptops work too, with the Windows power mode in place of the Legion one.
 - GPU stats need an NVIDIA card.
 - CPU temperature needs [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) running with its web server on.
 
