@@ -3,6 +3,7 @@
 
 & {
     Get-Process LegionNotch -ErrorAction SilentlyContinue | Stop-Process -Force
+    Wait-Process LegionNotch -Timeout 10 -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
 
     Remove-Item (Join-Path $env:LOCALAPPDATA "Programs\LegionNotch") -Recurse -Force -ErrorAction SilentlyContinue

@@ -16,9 +16,13 @@
     Write-Host "Downloading LegionNotch..."
     Invoke-WebRequest $url -OutFile $zip -UseBasicParsing
 
+    # updating: stop the running copy and wait until Windows releases its files
     Get-Process LegionNotch -ErrorAction SilentlyContinue | Stop-Process -Force
-    Start-Sleep -Milliseconds 500
-    if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+    Wait-Process LegionNotch -Timeout 10 -ErrorAction SilentlyContinue
+    for ($i = 0; (Test-Path $dir) -and $i -lt 20; $i++) {
+        try { Remove-Item $dir -Recurse -Force } catch { Start-Sleep -Milliseconds 500 }
+    }
+    if (Test-Path $dir) { throw "Couldn't replace $dir. Close LegionNotch and run the installer again." }
 
     Write-Host "Installing to $dir"
     Expand-Archive $zip $dir -Force
